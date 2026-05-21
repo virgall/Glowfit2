@@ -1,567 +1,806 @@
-import json
-from copy import deepcopy
-from datetime import date, datetime, timedelta
-from pathlib import Path
 
-import pandas as pd
 import streamlit as st
+import pandas as pd
+import json
+from pathlib import Path
+from datetime import date, datetime, timedelta
 
-APP_TITLE = "GlowFit"
-DATA_FILE = Path(__file__).with_name("glowfit_data.json")
-HEIGHT_IN = 69
-START_WEIGHT = 224.0
-GOAL_WEIGHT = 199.0
-PROTEIN_TARGET = 140
+st.set_page_config(page_title="GlowFit", layout="wide", initial_sidebar_state="expanded")
 
-MEALS = {
-    "Greek Yogurt Berry Crunch Bowl": {
-        "type": ["Breakfast", "Snack"], "servings": 1, "cal": 360, "protein": 38, "carbs": 34, "fiber": 9,
-        "gi": "Low", "timing": "Any day; great breakfast or evening sweet craving swap.",
-        "ingredients": {"Greek yogurt 0-2% (g)": 250, "berries (g)": 120, "chia seeds (tbsp)": 1, "high-protein low-sugar cereal (g)": 25},
-        "steps": ["Weigh yogurt in grams.", "Measure berries and cereal separately.", "Add chia last; let sit 5 minutes for fullness."],
-    },
-    "Protein Oats + Berries": {
-        "type": ["Breakfast", "Pre-workout"], "servings": 1, "cal": 410, "protein": 35, "carbs": 45, "fiber": 8,
-        "gi": "Moderate", "timing": "Best on training mornings or 1-2 hours before lifting/cardio.",
-        "ingredients": {"rolled oats dry (g)": 40, "protein powder (scoop)": 1, "berries (g)": 100, "cinnamon (tsp)": 1, "unsweetened almond milk (ml)": 200},
-        "steps": ["Weigh oats dry before cooking.", "Cook with almond milk and cinnamon.", "Stir protein in after cooking to avoid clumps."],
-    },
-    "Egg + Avocado Toast Plate": {
-        "type": ["Breakfast", "Lunch"], "servings": 1, "cal": 430, "protein": 28, "carbs": 28, "fiber": 9,
-        "gi": "Moderate", "timing": "Good on training or rest days; keep bread measured.",
-        "ingredients": {"eggs": 2, "egg whites (ml)": 120, "whole grain toast slice": 1, "avocado (g)": 50, "spinach (g)": 50},
-        "steps": ["Measure avocado by grams, not eyeballing.", "Use one toast slice unless it is a heavy training day.", "Add spinach/veg for volume."],
-    },
-    "High-Protein Cereal Bowl": {
-        "type": ["Breakfast", "Post-workout"], "servings": 1, "cal": 380, "protein": 35, "carbs": 38, "fiber": 8,
-        "gi": "Moderate", "timing": "Best at breakfast or after training; avoid as late-night oversized snack.",
-        "ingredients": {"high-protein low-sugar cereal (g)": 45, "Greek yogurt 0-2% (g)": 200, "berries (g)": 80, "chia seeds (tbsp)": 1},
-        "steps": ["Weigh cereal in grams; cereal portions are easy to overpour.", "Use Greek yogurt for protein instead of only milk.", "Add berries for sweetness and fibre."],
-    },
-    "Chicken Konjac Rice Bowl": {
-        "type": ["Lunch", "Dinner"], "servings": 4, "cal": 430, "protein": 46, "carbs": 22, "fiber": 9,
-        "gi": "Low", "timing": "Excellent rest-day or training-day fat-loss meal; add sweet potato if needed post-workout.",
-        "ingredients": {"chicken breast raw (g)": 700, "konjac rice packs": 4, "mixed vegetables (g)": 800, "olive oil (tbsp)": 2, "low-sugar sauce (tbsp)": 4},
-        "steps": ["Cook chicken, then divide total cooked weight by 4 containers.", "Rinse konjac rice well and dry-fry 2-3 minutes.", "Measure oil/sauce because they add calories quickly."],
-    },
-    "Salmon Veg + Sweet Potato": {
-        "type": ["Lunch", "Dinner", "Post-workout"], "servings": 4, "cal": 520, "protein": 38, "carbs": 35, "fiber": 8,
-        "gi": "Moderate", "timing": "Best post-workout or active days; keep sweet potato controlled on rest days.",
-        "ingredients": {"salmon fillet raw (g)": 680, "sweet potato raw (g)": 600, "broccoli/asparagus (g)": 800, "olive oil (tbsp)": 2},
-        "steps": ["Weigh sweet potato raw before roasting.", "Divide into 4 equal containers.", "Pair carb with salmon and veggies for steadier glucose."],
-    },
-    "Chicken Konjac Noodle Stir Fry": {
-        "type": ["Lunch", "Dinner"], "servings": 4, "cal": 390, "protein": 44, "carbs": 18, "fiber": 8,
-        "gi": "Low", "timing": "Great for fat loss and blood sugar stability.",
-        "ingredients": {"chicken breast raw (g)": 700, "konjac noodles packs": 4, "stir fry vegetables (g)": 900, "sesame/olive oil (tbsp)": 2, "soy/teriyaki low sugar (tbsp)": 4},
-        "steps": ["Rinse noodles very well, then dry-fry before sauce.", "Cook chicken separately for accurate portions.", "Use measured sauce/oil."],
-    },
-    "Lean Taco Bowl with Konjac Rice": {
-        "type": ["Lunch", "Dinner"], "servings": 4, "cal": 460, "protein": 42, "carbs": 28, "fiber": 10,
-        "gi": "Low-Moderate", "timing": "Good training-day meal; control beans/corn if glucose sensitive.",
-        "ingredients": {"lean ground turkey/chicken (g)": 700, "konjac rice packs": 4, "lettuce (g)": 300, "black beans drained (g)": 240, "salsa (g)": 200, "Greek yogurt 0-2% (g)": 200},
-        "steps": ["Measure beans by grams; keep portion moderate.", "Use Greek yogurt instead of sour cream.", "Build plate with lettuce first for volume."],
-    },
-    "Shrimp Veggie Konjac Noodles": {
-        "type": ["Lunch", "Dinner"], "servings": 3, "cal": 350, "protein": 40, "carbs": 17, "fiber": 7,
-        "gi": "Low", "timing": "Light dinner or rest-day meal.",
-        "ingredients": {"shrimp raw (g)": 600, "konjac noodles packs": 3, "zucchini/bell pepper mix (g)": 700, "olive oil (tbsp)": 1.5, "garlic/ginger sauce (tbsp)": 3},
-        "steps": ["Pat shrimp dry before cooking.", "Rinse and dry-fry konjac noodles.", "Divide into 3 equal containers."],
-    },
-    "Baked Potato Chicken Plate": {
-        "type": ["Lunch", "Dinner", "Post-workout"], "servings": 1, "cal": 480, "protein": 45, "carbs": 42, "fiber": 7,
-        "gi": "Moderate", "timing": "Best after workouts; choose smaller potato on rest days.",
-        "ingredients": {"cooked chicken (g)": 150, "baked potato (g)": 180, "Greek yogurt 0-2% (g)": 80, "steamed vegetables (g)": 250},
-        "steps": ["Weigh cooked potato portion.", "Top with Greek yogurt instead of heavy sour cream.", "Eat protein/veg first, then potato."],
-    },
-    "Tuna Egg Salad Bowl": {
-        "type": ["Lunch", "Snack"], "servings": 1, "cal": 360, "protein": 42, "carbs": 16, "fiber": 6,
-        "gi": "Low", "timing": "Good quick lunch; low prep.",
-        "ingredients": {"tuna can drained": 1, "boiled eggs": 2, "cucumber/lettuce (g)": 250, "light mayo or Greek yogurt (tbsp)": 1.5},
-        "steps": ["Drain tuna well.", "Measure dressing.", "Add crunchy vegetables for volume."],
-    },
-    "Fruit + Protein Snack Plate": {
-        "type": ["Snack", "Pre-workout"], "servings": 1, "cal": 240, "protein": 20, "carbs": 25, "fiber": 6,
-        "gi": "Low-Moderate", "timing": "Best pre-workout or mid-day; use preferred fruits first.",
-        "ingredients": {"Greek yogurt 0-2% (g)": 170, "preferred fruit berries/kiwi/apple (g)": 120, "peanut butter or nuts (tbsp)": 1},
-        "steps": ["Choose berries/kiwi/green apple most often.", "Pair fruit with protein/fat.", "Avoid fruit juice."],
-    },
-}
-
-FRUIT_GUIDE = {
-    "Preferred": {
-        "Berries": "Low sugar for the volume; great with Greek yogurt or oats.",
-        "Green apple": "Good with peanut butter or cheese; avoid juice form.",
-        "Kiwi": "Good around workouts; vitamin C and fibre.",
-        "Grapefruit": "Often good for low-cal sweetness; check medication interactions if applicable.",
-        "Pear": "Fibre-rich; portion one small/medium.",
-        "Cherries": "Use controlled portions; better with protein."},
-    "Limited but useful timing": {
-        "Banana": "Best pre/post-workout. Choose smaller or less ripe; pair with protein/peanut butter.",
-        "Mango": "Best after lower-body/cardio days in small portions with Greek yogurt/protein.",
-        "Pineapple": "Best post-workout in measured portions; avoid juice.",
-        "Grapes": "Best small portion after activity; avoid grazing from a large bowl.",
-        "Watermelon": "Best after walks/cardio in small portions with protein/fat nearby."}
-}
-
-WORKOUT_PLAN = {
-    "Monday": {"focus": "Glutes + Lower Body Strength", "exercises": [
-        ("Hip Thrust", 4, 10, 45, "https://www.youtube.com/results?search_query=hip+thrust+proper+form"),
-        ("Romanian Deadlift", 3, 10, 25, "https://www.youtube.com/results?search_query=romanian+deadlift+form"),
-        ("Leg Press", 3, 12, 90, "https://www.youtube.com/results?search_query=leg+press+form"),
-        ("Cable Glute Kickback", 3, 12, 10, "https://www.youtube.com/results?search_query=cable+glute+kickback+form"),
-        ("Incline Walk", 1, 25, 0, "https://www.youtube.com/results?search_query=treadmill+incline+walking+fat+loss") ]},
-    "Tuesday": {"focus": "Upper Body + Core", "exercises": [
-        ("Lat Pulldown", 3, 10, 35, "https://www.youtube.com/results?search_query=lat+pulldown+form"),
-        ("Seated Row", 3, 10, 30, "https://www.youtube.com/results?search_query=seated+row+form"),
-        ("Dumbbell Shoulder Press", 3, 10, 12, "https://www.youtube.com/results?search_query=dumbbell+shoulder+press+form"),
-        ("Triceps Rope Pushdown", 3, 12, 15, "https://www.youtube.com/results?search_query=triceps+rope+pushdown+form"),
-        ("Dead Bug", 3, 12, 0, "https://www.youtube.com/results?search_query=dead+bug+core+exercise") ]},
-    "Wednesday": {"focus": "Cardio + Core", "exercises": [
-        ("Incline Walk", 1, 35, 0, "https://www.youtube.com/results?search_query=incline+walking+workout"),
-        ("Stairmaster", 1, 15, 0, "https://www.youtube.com/results?search_query=stairmaster+beginner+workout"),
-        ("Plank", 3, 30, 0, "https://www.youtube.com/results?search_query=plank+proper+form"),
-        ("Pallof Press", 3, 12, 10, "https://www.youtube.com/results?search_query=pallof+press+form") ]},
-    "Thursday": {"focus": "Glutes + Hamstrings", "exercises": [
-        ("Bulgarian Split Squat", 3, 10, 10, "https://www.youtube.com/results?search_query=bulgarian+split+squat+form"),
-        ("Glute Bridge", 4, 12, 35, "https://www.youtube.com/results?search_query=weighted+glute+bridge+form"),
-        ("Hamstring Curl", 3, 12, 30, "https://www.youtube.com/results?search_query=hamstring+curl+machine+form"),
-        ("Hip Abduction", 3, 15, 35, "https://www.youtube.com/results?search_query=hip+abduction+machine+form"),
-        ("Easy Walk", 1, 20, 0, "https://www.youtube.com/results?search_query=walking+for+fat+loss") ]},
-    "Friday": {"focus": "Upper Body + Arms + Core", "exercises": [
-        ("Chest Press", 3, 10, 25, "https://www.youtube.com/results?search_query=chest+press+machine+form"),
-        ("One Arm Dumbbell Row", 3, 10, 15, "https://www.youtube.com/results?search_query=one+arm+dumbbell+row+form"),
-        ("Lateral Raise", 3, 12, 7, "https://www.youtube.com/results?search_query=lateral+raise+form"),
-        ("Biceps Curl", 3, 12, 10, "https://www.youtube.com/results?search_query=dumbbell+biceps+curl+form"),
-        ("Cable Crunch", 3, 12, 15, "https://www.youtube.com/results?search_query=cable+crunch+form") ]},
-    "Saturday": {"focus": "Full Body + Cardio", "exercises": [
-        ("Goblet Squat", 3, 12, 20, "https://www.youtube.com/results?search_query=goblet+squat+form"),
-        ("Kettlebell Deadlift", 3, 12, 25, "https://www.youtube.com/results?search_query=kettlebell+deadlift+form"),
-        ("Step Ups", 3, 10, 10, "https://www.youtube.com/results?search_query=dumbbell+step+up+form"),
-        ("Bike or Elliptical", 1, 25, 0, "https://www.youtube.com/results?search_query=elliptical+beginner+workout") ]},
-    "Sunday": {"focus": "Rest + Mobility", "exercises": [
-        ("Gentle Walk", 1, 30, 0, "https://www.youtube.com/results?search_query=walking+recovery+day"),
-        ("Hip Flexor Stretch", 2, 45, 0, "https://www.youtube.com/results?search_query=hip+flexor+stretch"),
-        ("Glute Stretch", 2, 45, 0, "https://www.youtube.com/results?search_query=glute+stretch") ]},
-}
-
-SYMPTOMS = {
-    "Excessive thirst": "Hydrate and consider whether recent meals were high in sugar/refined carbs. If persistent, discuss with clinician.",
-    "Frequent urination": "Track timing and hydration. Persistent symptoms deserve medical guidance.",
-    "Shakiness/sweating": "Consider whether you under-ate or delayed meals. Pair carbs with protein; seek urgent help if severe.",
-    "Dizziness/lightheaded": "Pause exercise, hydrate, and eat balanced food if needed. Seek help if recurring or severe.",
-    "Blurred vision": "Do not ignore repeated blurred vision. Consider glucose check and clinician advice.",
-    "Unusual fatigue": "Review sleep, calories, hydration, and meal balance. Monitor if it repeats.",
-    "Headache": "Hydration, meal timing, and stress may matter. Track pattern.",
-    "Nausea/confusion": "If severe, unusual, or paired with very high/low glucose symptoms, seek medical help promptly.",
-}
+DATA_DIR = Path("data")
+DATA_DIR.mkdir(exist_ok=True)
+DATA_FILE = DATA_DIR / "glowfit_data.json"
 
 DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 MEAL_TYPES = ["Breakfast", "Lunch", "Dinner", "Snack"]
 
-def today_str():
-    return date.today().isoformat()
+PROFILE_DEFAULT = {
+    "height_in": 69,
+    "start_weight": 224.0,
+    "current_weight": 224.0,
+    "goal_weight": 199.0,
+    "protein_target": 140,
+    "training_day": True,
+    "calorie_training": 1850,
+    "calorie_rest": 1650,
+    "carb_training": 150,
+    "carb_rest": 105,
+    "water_target_l": 2.8,
+    "step_target": 8000
+}
 
-def week_start(d=None):
-    d = d or date.today()
-    return (d - timedelta(days=d.weekday())).isoformat()
+MEALS = {
+    "Greek Yogurt Berry Parfait": {
+        "type": "Breakfast",
+        "cal": 360, "protein": 34, "carbs": 32, "fibre": 8,
+        "gi": "Low",
+        "when": "Good breakfast or post-workout snack.",
+        "prep_servings": 4,
+        "ingredients": {
+            "Greek yogurt 0-2%": {"qty": 800, "unit": "g"},
+            "Mixed berries": {"qty": 480, "unit": "g"},
+            "Chia seeds": {"qty": 48, "unit": "g"},
+            "Low sugar granola": {"qty": 120, "unit": "g"}
+        },
+        "steps": [
+            "Use a food scale for yogurt and berries.",
+            "Portion 200g yogurt per serving.",
+            "Add 120g berries and 12g chia per serving.",
+            "Keep granola measured at 30g per serving."
+        ]
+    },
+    "Protein Oats With Berries": {
+        "type": "Breakfast",
+        "cal": 420, "protein": 35, "carbs": 46, "fibre": 9,
+        "gi": "Moderate",
+        "when": "Best on training mornings or before lower body/cardio days.",
+        "prep_servings": 3,
+        "ingredients": {
+            "Rolled oats": {"qty": 120, "unit": "g"},
+            "Protein powder": {"qty": 90, "unit": "g"},
+            "Mixed berries": {"qty": 360, "unit": "g"},
+            "Chia seeds": {"qty": 30, "unit": "g"}
+        },
+        "steps": [
+            "Measure dry oats before cooking: 40g per serving.",
+            "Add protein after cooking so it mixes smoothly.",
+            "Use berries instead of sugar or syrup.",
+            "Pair with water or unsweetened milk."
+        ]
+    },
+    "High Protein Cereal Bowl": {
+        "type": "Breakfast",
+        "cal": 390, "protein": 32, "carbs": 42, "fibre": 8,
+        "gi": "Moderate",
+        "when": "Best at breakfast or after training. Avoid late-night oversized bowls.",
+        "prep_servings": 1,
+        "ingredients": {
+            "High protein low sugar cereal": {"qty": 45, "unit": "g"},
+            "Greek yogurt": {"qty": 170, "unit": "g"},
+            "Strawberries": {"qty": 100, "unit": "g"},
+            "Chia seeds": {"qty": 10, "unit": "g"}
+        },
+        "steps": [
+            "Weigh cereal at 45g instead of free-pouring.",
+            "Use Greek yogurt to increase protein.",
+            "Add berries for fibre and sweetness.",
+            "Choose cereal with higher protein and lower added sugar."
+        ]
+    },
+    "Eggs Avocado Toast Plate": {
+        "type": "Breakfast",
+        "cal": 430, "protein": 28, "carbs": 30, "fibre": 8,
+        "gi": "Low-Moderate",
+        "when": "Good filling breakfast, especially on active days.",
+        "prep_servings": 1,
+        "ingredients": {
+            "Eggs": {"qty": 2, "unit": "whole"},
+            "Egg whites": {"qty": 120, "unit": "g"},
+            "Avocado": {"qty": 50, "unit": "g"},
+            "Whole grain toast": {"qty": 1, "unit": "slice"},
+            "Spinach": {"qty": 60, "unit": "g"}
+        },
+        "steps": [
+            "Measure avocado to 50g.",
+            "Use 1 slice toast, not 2, unless training day needs more carbs.",
+            "Add spinach or vegetables for volume.",
+            "Cook with spray or measured oil."
+        ]
+    },
+    "Chicken Konjac Rice Bowl": {
+        "type": "Lunch",
+        "cal": 480, "protein": 48, "carbs": 24, "fibre": 10,
+        "gi": "Low",
+        "when": "Great lunch or dinner for fat loss and blood sugar stability.",
+        "prep_servings": 4,
+        "ingredients": {
+            "Chicken breast": {"qty": 680, "unit": "g"},
+            "Konjac rice": {"qty": 800, "unit": "g"},
+            "Broccoli": {"qty": 500, "unit": "g"},
+            "Bell peppers": {"qty": 300, "unit": "g"},
+            "Olive oil": {"qty": 20, "unit": "g"}
+        },
+        "steps": [
+            "Weigh chicken cooked or raw consistently.",
+            "Rinse konjac rice very well, then dry-pan before mixing.",
+            "Measure oil with a teaspoon or scale.",
+            "Split into 4 containers."
+        ]
+    },
+    "Salmon Veg Sweet Potato": {
+        "type": "Dinner",
+        "cal": 560, "protein": 42, "carbs": 38, "fibre": 8,
+        "gi": "Moderate",
+        "when": "Best after training or on days with higher activity.",
+        "prep_servings": 3,
+        "ingredients": {
+            "Salmon fillets": {"qty": 450, "unit": "g"},
+            "Sweet potato": {"qty": 450, "unit": "g"},
+            "Green beans": {"qty": 450, "unit": "g"},
+            "Olive oil": {"qty": 18, "unit": "g"}
+        },
+        "steps": [
+            "Keep sweet potato at about 150g per serving.",
+            "Pair carb with salmon and vegetables.",
+            "Measure oil before roasting.",
+            "Avoid sugary glazes."
+        ]
+    },
+    "Turkey Konjac Noodle Stir Fry": {
+        "type": "Dinner",
+        "cal": 470, "protein": 45, "carbs": 22, "fibre": 9,
+        "gi": "Low",
+        "when": "Good dinner when you want noodles without a heavy carb load.",
+        "prep_servings": 4,
+        "ingredients": {
+            "Lean ground turkey": {"qty": 680, "unit": "g"},
+            "Konjac noodles": {"qty": 800, "unit": "g"},
+            "Mixed stir fry vegetables": {"qty": 700, "unit": "g"},
+            "Low sodium soy sauce": {"qty": 60, "unit": "ml"},
+            "Sesame oil": {"qty": 16, "unit": "g"}
+        },
+        "steps": [
+            "Rinse and dry-pan konjac noodles.",
+            "Cook turkey fully and drain if needed.",
+            "Measure sesame oil carefully.",
+            "Add vegetables for volume and fibre."
+        ]
+    },
+    "Shrimp Konjac Rice Bowl": {
+        "type": "Lunch",
+        "cal": 430, "protein": 44, "carbs": 20, "fibre": 8,
+        "gi": "Low",
+        "when": "Good lighter lunch or dinner, especially on rest days.",
+        "prep_servings": 3,
+        "ingredients": {
+            "Shrimp": {"qty": 540, "unit": "g"},
+            "Konjac rice": {"qty": 600, "unit": "g"},
+            "Zucchini": {"qty": 300, "unit": "g"},
+            "Spinach": {"qty": 180, "unit": "g"},
+            "Avocado": {"qty": 120, "unit": "g"}
+        },
+        "steps": [
+            "Weigh shrimp after thawing and draining.",
+            "Add konjac rice for volume.",
+            "Measure avocado to control calories.",
+            "Season without sugary sauces."
+        ]
+    },
+    "Chicken Shawarma Bowl": {
+        "type": "Lunch",
+        "cal": 520, "protein": 50, "carbs": 32, "fibre": 9,
+        "gi": "Low-Moderate",
+        "when": "Good high-protein meal. Use more vegetables and less wrap/rice on rest days.",
+        "prep_servings": 4,
+        "ingredients": {
+            "Chicken breast": {"qty": 720, "unit": "g"},
+            "Cucumber": {"qty": 300, "unit": "g"},
+            "Tomatoes": {"qty": 300, "unit": "g"},
+            "Lettuce": {"qty": 300, "unit": "g"},
+            "Greek yogurt sauce": {"qty": 240, "unit": "g"},
+            "Low carb wrap": {"qty": 4, "unit": "wraps"}
+        },
+        "steps": [
+            "Use yogurt sauce instead of heavy creamy sauces.",
+            "Keep wrap to one serving.",
+            "Add extra lettuce/cucumber for volume.",
+            "Use chicken as the anchor protein."
+        ]
+    },
+    "Tuna Egg Salad Plate": {
+        "type": "Lunch",
+        "cal": 420, "protein": 42, "carbs": 18, "fibre": 7,
+        "gi": "Low",
+        "when": "Good low-carb lunch or rest-day meal.",
+        "prep_servings": 2,
+        "ingredients": {
+            "Tuna in water": {"qty": 240, "unit": "g"},
+            "Eggs": {"qty": 4, "unit": "whole"},
+            "Greek yogurt": {"qty": 80, "unit": "g"},
+            "Celery": {"qty": 120, "unit": "g"},
+            "Cucumber": {"qty": 200, "unit": "g"},
+            "Lettuce": {"qty": 200, "unit": "g"}
+        },
+        "steps": [
+            "Use Greek yogurt instead of lots of mayo.",
+            "Serve over lettuce and cucumber.",
+            "Measure any added dressing.",
+            "Add one fruit only if needed around workout."
+        ]
+    },
+    "Apple Peanut Butter Protein Snack": {
+        "type": "Snack",
+        "cal": 260, "protein": 12, "carbs": 28, "fibre": 6,
+        "gi": "Low-Moderate",
+        "when": "Good pre-workout snack or afternoon snack. Measure peanut butter.",
+        "prep_servings": 1,
+        "ingredients": {
+            "Green apple": {"qty": 1, "unit": "medium"},
+            "Peanut butter": {"qty": 16, "unit": "g"},
+            "Greek yogurt": {"qty": 100, "unit": "g"}
+        },
+        "steps": [
+            "Use one medium green apple.",
+            "Measure peanut butter at 16g.",
+            "Pair with Greek yogurt for more protein.",
+            "Avoid adding honey or caramel."
+        ]
+    },
+    "Kiwi Cottage Cheese Bowl": {
+        "type": "Snack",
+        "cal": 240, "protein": 25, "carbs": 22, "fibre": 4,
+        "gi": "Low",
+        "when": "Good snack or light breakfast.",
+        "prep_servings": 1,
+        "ingredients": {
+            "Cottage cheese": {"qty": 200, "unit": "g"},
+            "Kiwi": {"qty": 1, "unit": "whole"},
+            "Chia seeds": {"qty": 8, "unit": "g"}
+        },
+        "steps": [
+            "Measure cottage cheese.",
+            "Use one kiwi.",
+            "Add chia for fibre.",
+            "Keep it simple; no syrup needed."
+        ]
+    }
+}
+
+LIMITED_FOODS = {
+    "Banana": "Best pre-workout or post-workout with Greek yogurt or protein. Choose half or small banana. Avoid alone late at night.",
+    "Mango": "Best after intense lower-body/cardio training in a small serving, paired with protein. Avoid juice or large bowls.",
+    "Pineapple": "Best post-workout in a controlled portion with Greek yogurt or cottage cheese. Avoid fasted or as juice.",
+    "Grapes": "Use a small measured handful after activity or paired with nuts/protein. Avoid mindless snacking.",
+    "Watermelon": "Use small portions on hot/active days with protein. Avoid large bowls alone.",
+    "Dried fruit": "Use rarely and only measured, preferably around training. Easy to overeat and spike sugars.",
+    "Fruit juice": "Avoid as default. If used for low blood sugar concerns, follow clinician guidance."
+}
+
+WORKOUT_WEEK = {
+    "Monday": {
+        "title": "Glutes + Lower Body Strength",
+        "focus": "Glute growth, legs, strength",
+        "exercises": [
+            ["Hip Thrust", 4, 10, 55, "https://www.youtube.com/results?search_query=hip+thrust+proper+form"],
+            ["Goblet Squat", 3, 10, 25, "https://www.youtube.com/results?search_query=goblet+squat+proper+form"],
+            ["Romanian Deadlift", 3, 10, 35, "https://www.youtube.com/results?search_query=dumbbell+romanian+deadlift+proper+form"],
+            ["Cable or Band Kickback", 3, 12, 10, "https://www.youtube.com/results?search_query=glute+kickback+proper+form"],
+            ["Incline Walk", 1, 25, 0, "https://www.youtube.com/results?search_query=treadmill+incline+walking+fat+loss"]
+        ]
+    },
+    "Tuesday": {
+        "title": "Upper Body + Core",
+        "focus": "Arms, back, shoulders, core",
+        "exercises": [
+            ["Lat Pulldown", 3, 10, 40, "https://www.youtube.com/results?search_query=lat+pulldown+proper+form"],
+            ["Seated Row", 3, 10, 35, "https://www.youtube.com/results?search_query=seated+row+proper+form"],
+            ["Dumbbell Shoulder Press", 3, 10, 15, "https://www.youtube.com/results?search_query=dumbbell+shoulder+press+proper+form"],
+            ["Triceps Pressdown", 3, 12, 20, "https://www.youtube.com/results?search_query=tricep+pressdown+proper+form"],
+            ["Dead Bug", 3, 12, 0, "https://www.youtube.com/results?search_query=dead+bug+exercise+proper+form"]
+        ]
+    },
+    "Wednesday": {
+        "title": "Cardio + Core",
+        "focus": "Fat loss, stamina, waist/core strength",
+        "exercises": [
+            ["Incline Walk", 1, 35, 0, "https://www.youtube.com/results?search_query=treadmill+incline+walking+fat+loss"],
+            ["Plank", 3, 30, 0, "https://www.youtube.com/results?search_query=plank+proper+form"],
+            ["Cable Woodchop", 3, 12, 15, "https://www.youtube.com/results?search_query=cable+woodchop+proper+form"],
+            ["Bird Dog", 3, 10, 0, "https://www.youtube.com/results?search_query=bird+dog+exercise+proper+form"]
+        ]
+    },
+    "Thursday": {
+        "title": "Glutes + Hamstrings",
+        "focus": "Glute growth, posterior chain",
+        "exercises": [
+            ["Leg Press", 4, 10, 90, "https://www.youtube.com/results?search_query=leg+press+proper+form"],
+            ["Dumbbell Romanian Deadlift", 3, 10, 35, "https://www.youtube.com/results?search_query=dumbbell+romanian+deadlift+proper+form"],
+            ["Bulgarian Split Squat", 3, 8, 15, "https://www.youtube.com/results?search_query=bulgarian+split+squat+proper+form"],
+            ["Hip Abduction Machine", 3, 15, 35, "https://www.youtube.com/results?search_query=hip+abduction+machine+proper+form"],
+            ["Stairmaster", 1, 15, 0, "https://www.youtube.com/results?search_query=stairmaster+workout+beginner"]
+        ]
+    },
+    "Friday": {
+        "title": "Upper Body Tone + Cardio",
+        "focus": "Arms, back, shoulders, fat loss",
+        "exercises": [
+            ["Assisted Push Up", 3, 8, 0, "https://www.youtube.com/results?search_query=incline+push+up+proper+form"],
+            ["Dumbbell Row", 3, 10, 20, "https://www.youtube.com/results?search_query=dumbbell+row+proper+form"],
+            ["Bicep Curl", 3, 12, 10, "https://www.youtube.com/results?search_query=dumbbell+bicep+curl+proper+form"],
+            ["Lateral Raise", 3, 12, 8, "https://www.youtube.com/results?search_query=dumbbell+lateral+raise+proper+form"],
+            ["Bike or Elliptical", 1, 25, 0, "https://www.youtube.com/results?search_query=elliptical+cardio+workout+beginner"]
+        ]
+    },
+    "Saturday": {
+        "title": "Active Recovery",
+        "focus": "Steps, mobility, light cardio",
+        "exercises": [
+            ["Outdoor Walk", 1, 45, 0, "https://www.youtube.com/results?search_query=walking+for+fat+loss"],
+            ["Glute Bridge", 3, 15, 0, "https://www.youtube.com/results?search_query=glute+bridge+proper+form"],
+            ["Stretching", 1, 15, 0, "https://www.youtube.com/results?search_query=full+body+stretching+routine"]
+        ]
+    },
+    "Sunday": {
+        "title": "Rest + Prep",
+        "focus": "Recovery, meal prep, gentle steps",
+        "exercises": [
+            ["Gentle Walk", 1, 25, 0, "https://www.youtube.com/results?search_query=gentle+walk+recovery"],
+            ["Mobility", 1, 10, 0, "https://www.youtube.com/results?search_query=beginner+mobility+routine"]
+        ]
+    }
+}
+
+SYMPTOMS = {
+    "Excessive thirst": "Hydrate and review recent high-carb/salty meals. If persistent, discuss with your clinician.",
+    "Frequent urination": "Track timing and hydration. If persistent or severe, seek medical advice.",
+    "Shakiness": "Do not ignore. If you use glucose monitoring, check your level. Pair carbs with protein and follow clinician guidance.",
+    "Dizziness": "Pause activity, hydrate, and eat balanced food if needed. Seek help if severe or recurring.",
+    "Blurred vision": "Take seriously if new, severe, or recurrent. Consider medical advice.",
+    "Extreme fatigue": "Review sleep, meals, hydration, and training load. Persistent fatigue should be discussed with a provider.",
+    "Headache": "Hydrate, check meal timing, and avoid skipping meals around workouts.",
+    "Nausea": "Avoid intense workouts while feeling unwell. Seek advice if severe or repeated."
+}
+
+SMART_GROCERY = {
+    "Proteins": ["Chicken breast", "Salmon", "White fish", "Shrimp", "Lean ground turkey", "Eggs", "Egg whites", "Tuna in water", "Greek yogurt", "Cottage cheese", "Protein powder"],
+    "Low sugar fruits": ["Strawberries", "Blueberries", "Raspberries", "Blackberries", "Green apples", "Kiwi", "Grapefruit", "Pear", "Cherries"],
+    "Caution fruits": list(LIMITED_FOODS.keys()),
+    "Vegetables": ["Broccoli", "Spinach", "Lettuce", "Cucumber", "Tomatoes", "Zucchini", "Green beans", "Bell peppers", "Celery", "Cauliflower"],
+    "Smart carbs": ["Konjac rice", "Konjac noodles", "Rolled oats", "Sweet potato", "Low carb wrap", "Whole grain toast", "High protein low sugar cereal"],
+    "Fats and extras": ["Avocado", "Peanut butter", "Olive oil", "Chia seeds", "Low sodium soy sauce", "Greek yogurt sauce"]
+}
 
 def default_data():
-    ws = week_start()
+    week = {}
+    for d in DAYS:
+        week[d] = {m: "" for m in MEAL_TYPES}
     return {
-        "profile": {"height_in": HEIGHT_IN, "start_weight": START_WEIGHT, "goal_weight": GOAL_WEIGHT, "protein_target": PROTEIN_TARGET, "calorie_target_rest": 1650, "calorie_target_training": 1850},
-        "settings": {"training_day": True, "current_week": ws},
-        "daily": {},
-        "weekly_plan": {ws: {day: {mt: "" for mt in MEAL_TYPES} for day in DAYS}},
+        "profile": PROFILE_DEFAULT.copy(),
+        "weekly_plan": week,
         "manual_foods": [],
-        "workout_logs": {},
-        "symptom_logs": [],
+        "manual_grocery": [],
         "grocery_checked": {},
-        "custom_grocery": [],
+        "workout_logs": {},
+        "daily_logs": {},
+        "symptom_logs": [],
+        "weight_logs": [],
+        "settings": {}
     }
 
 def load_data():
-    base = default_data()
     if DATA_FILE.exists():
         try:
-            loaded = json.loads(DATA_FILE.read_text())
-            return merge_defaults(base, loaded)
-        except Exception:
+            with open(DATA_FILE, "r", encoding="utf-8") as f:
+                loaded = json.load(f)
+            base = default_data()
+            deep_merge(base, loaded)
             return base
-    return base
+        except Exception:
+            return default_data()
+    return default_data()
 
-def merge_defaults(base, loaded):
-    if isinstance(base, dict):
-        out = deepcopy(base)
-        if isinstance(loaded, dict):
-            for k, v in loaded.items():
-                out[k] = merge_defaults(out.get(k), v) if k in out else v
-        return out
-    return loaded if loaded is not None else base
+def deep_merge(base, incoming):
+    for k, v in incoming.items():
+        if isinstance(v, dict) and isinstance(base.get(k), dict):
+            deep_merge(base[k], v)
+        else:
+            base[k] = v
 
-def save_data(data):
-    DATA_FILE.write_text(json.dumps(data, indent=2, default=str))
+def save_data():
+    with open(DATA_FILE, "w", encoding="utf-8") as f:
+        json.dump(st.session_state.data, f, indent=2)
 
-def get_data():
+def init():
     if "data" not in st.session_state:
         st.session_state.data = load_data()
-    return st.session_state.data
+    if "page" not in st.session_state:
+        st.session_state.page = "Home"
 
-def autosave():
-    save_data(st.session_state.data)
-
-def ensure_day(data, ds):
-    data["daily"].setdefault(ds, {"weight": None, "calories": 0, "protein": 0, "carbs": 0, "fiber": 0, "water": 0, "steps": 0, "notes": ""})
-    return data["daily"][ds]
-
-def ensure_week(data):
-    ws = week_start()
-    data["settings"]["current_week"] = ws
-    data["weekly_plan"].setdefault(ws, {day: {mt: "" for mt in MEAL_TYPES} for day in DAYS})
-    return ws
-
-def bmi(weight_lb):
-    return round((weight_lb / (HEIGHT_IN ** 2)) * 703, 1) if weight_lb else None
-
-def current_weight(data):
-    weights = [(d, v.get("weight")) for d, v in data["daily"].items() if v.get("weight")]
-    if weights:
-        return sorted(weights)[-1][1]
-    return data["profile"]["start_weight"]
-
-def meal_options_for_type(mt):
-    opts = [name for name, m in MEALS.items() if mt in m["type"]]
-    return [""] + sorted(opts)
+def today_str():
+    return date.today().isoformat()
 
 def day_name_from_date(ds):
     return datetime.strptime(ds, "%Y-%m-%d").strftime("%A")
 
-def get_planned_meal(data, ds, mt):
-    ws = week_start(datetime.strptime(ds, "%Y-%m-%d").date())
+def get_week_start(dt=None):
+    dt = dt or date.today()
+    return dt - timedelta(days=dt.weekday())
+
+def meal_totals_for_date(ds):
+    data = st.session_state.data
     day = day_name_from_date(ds)
-    return data.get("weekly_plan", {}).get(ws, {}).get(day, {}).get(mt, "")
-
-def manual_foods_for(data, ds, mt=None):
-    rows = [f for f in data.get("manual_foods", []) if f.get("date") == ds]
-    if mt:
-        rows = [f for f in rows if f.get("meal_type") == mt]
-    return rows
-
-def planned_nutrition(data, ds):
-    totals = {"calories": 0, "protein": 0, "carbs": 0, "fiber": 0}
-    for mt in MEAL_TYPES:
-        meal = get_planned_meal(data, ds, mt)
-        if meal in MEALS:
-            totals["calories"] += MEALS[meal]["cal"]
-            totals["protein"] += MEALS[meal]["protein"]
-            totals["carbs"] += MEALS[meal]["carbs"]
-            totals["fiber"] += MEALS[meal]["fiber"]
+    totals = {"cal": 0, "protein": 0, "carbs": 0, "fibre": 0}
+    plan = data["weekly_plan"].get(day, {})
+    for mt, meal_name in plan.items():
+        if meal_name in MEALS:
+            for k in totals:
+                totals[k] += MEALS[meal_name].get(k, 0)
+    for item in data["manual_foods"]:
+        if item.get("date") == ds:
+            for k in totals:
+                totals[k] += float(item.get(k, 0) or 0)
     return totals
 
-def manual_nutrition(data, ds):
-    totals = {"calories": 0, "protein": 0, "carbs": 0, "fiber": 0}
-    for f in manual_foods_for(data, ds):
-        totals["calories"] += float(f.get("calories", 0))
-        totals["protein"] += float(f.get("protein", 0))
-        totals["carbs"] += float(f.get("carbs", 0))
-        totals["fiber"] += float(f.get("fiber", 0))
-    return totals
-
-def total_nutrition(data, ds):
-    p, m = planned_nutrition(data, ds), manual_nutrition(data, ds)
-    return {k: p[k] + m[k] for k in p}
-
-def grocery_from_week(data, ws):
+def weekly_grocery_totals():
+    data = st.session_state.data
     totals = {}
-    plan = data.get("weekly_plan", {}).get(ws, {})
-    for day in DAYS:
-        for mt in MEAL_TYPES:
-            meal = plan.get(day, {}).get(mt, "")
-            if meal in MEALS:
-                for item, qty in MEALS[meal]["ingredients"].items():
-                    totals[item] = totals.get(item, 0) + qty
-    for f in data.get("manual_foods", []):
-        if f.get("add_to_grocery") and week_start(datetime.strptime(f["date"], "%Y-%m-%d").date()) == ws:
-            item = f.get("grocery_item") or f.get("name")
-            qty = f.get("grocery_qty", 1)
-            totals[item] = totals.get(item, 0) + qty
-    for item in data.get("custom_grocery", []):
-        totals[item] = totals.get(item, 0) + 1
+    for d in DAYS:
+        for mt, meal_name in data["weekly_plan"].get(d, {}).items():
+            if meal_name in MEALS:
+                meal = MEALS[meal_name]
+                servings = meal.get("prep_servings", 1)
+                for ing, q in meal["ingredients"].items():
+                    key = (ing, q["unit"])
+                    totals[key] = totals.get(key, 0) + q["qty"]
+    for item in data["manual_grocery"]:
+        key = (item["name"], item.get("unit", "item"))
+        totals[key] = totals.get(key, 0) + float(item.get("qty", 1) or 1)
     return totals
 
-def grocery_suggested_meals(selected_items):
-    selected = [s.lower() for s in selected_items]
-    suggestions = []
-    for meal, info in MEALS.items():
-        text = " ".join(info["ingredients"].keys()).lower()
-        score = sum(1 for s in selected if s and s in text)
-        if score:
-            suggestions.append((score, meal))
-    return [m for _, m in sorted(suggestions, reverse=True)[:8]]
+def bmi(weight_lb, height_in=69):
+    return round((weight_lb / (height_in * height_in)) * 703, 1)
 
-def page_header(title, caption=""):
-    st.title(title)
-    if caption:
-        st.caption(caption)
+def bmi_label(v):
+    if v < 18.5: return "Underweight"
+    if v < 25: return "Normal"
+    if v < 30: return "Overweight"
+    return "Obesity range"
 
-st.set_page_config(page_title="GlowFit", page_icon="ð", layout="wide")
-st.markdown("""
-<style>
-.stApp {background: linear-gradient(135deg,#0c0c12,#17111d,#0f1416); color: #f7eef7;}
-[data-testid="stSidebar"] {background: #111118;}
-.card {border:1px solid rgba(255,255,255,.12); border-radius:18px; padding:18px; background:rgba(255,255,255,.055); margin-bottom:12px;}
-.small {color:#cfc3cf; font-size:0.9rem;}
-.good {color:#9ff0c5; font-weight:700;} .warn {color:#ffd28a; font-weight:700;}
-</style>
-""", unsafe_allow_html=True)
+def safe_df(rows):
+    if not rows:
+        return pd.DataFrame()
+    return pd.DataFrame(rows)
 
-data = get_data()
-ws = ensure_week(data)
-ensure_day(data, today_str())
-autosave()
+def card(text):
+    st.markdown(f"<div class='gf-card'>{text}</div>", unsafe_allow_html=True)
 
-st.sidebar.title("ð GlowFit")
-page = st.sidebar.radio("Dashboard", ["Home", "Meals", "Weekly Plan", "Grocery", "Workouts", "Progress", "Blood Sugar", "Settings / Backup"])
-st.sidebar.caption("Prediabetes-aware Â· fat loss Â· glute growth")
+def css():
+    st.markdown("""
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
+      html, body, [class*="css"] {font-family: Inter, sans-serif;}
+      .stApp {background: radial-gradient(circle at 20% 10%, #35213f 0, #0e1018 40%, #090a0f 100%); color: #f7eef7;}
+      section[data-testid="stSidebar"] {background: #11131c;}
+      .gf-title {font-size: 42px; font-weight: 800; line-height: 1.1; margin-bottom: 6px;}
+      .gf-sub {color: #c9bbc9; font-size: 16px;}
+      .gf-card {background: rgba(255,255,255,0.075); border: 1px solid rgba(255,255,255,0.12); border-radius: 22px; padding: 18px; margin: 10px 0;}
+      .gf-pill {display:inline-block; background: rgba(255, 158, 209, .18); border:1px solid rgba(255,158,209,.28); border-radius:99px; padding:6px 11px; margin:3px; color:#ffe3f3; font-weight:600;}
+      .small {color:#c9bbc9; font-size:13px;}
+      .good {color:#9ef0b2; font-weight:700;}
+      .warn {color:#ffd17d; font-weight:700;}
+      .bad {color:#ff9ba3; font-weight:700;}
+      button[kind="secondary"] {border-radius: 12px;}
+    </style>
+    """, unsafe_allow_html=True)
+
+init()
+css()
+data = st.session_state.data
+
+st.sidebar.markdown("<h1>GlowFit</h1>", unsafe_allow_html=True)
+st.sidebar.caption("Prediabetes-aware | fat loss | glute growth")
+
+page = st.sidebar.radio(
+    "Dashboard",
+    ["Home", "Meals", "Weekly Plan", "Grocery", "Workouts", "Progress", "Blood Sugar", "Settings / Backup"],
+    index=["Home", "Meals", "Weekly Plan", "Grocery", "Workouts", "Progress", "Blood Sugar", "Settings / Backup"].index(st.session_state.page)
+)
+st.session_state.page = page
 
 if page == "Home":
-    page_header("Home Dashboard", "Todayâs plan pulls from your weekly meals, manual foods, training mode, and progress logs.")
-    today = today_str()
-    day = ensure_day(data, today)
+    st.markdown("<div class='gf-title'>Today Dashboard</div>", unsafe_allow_html=True)
+    st.markdown("<div class='gf-sub'>A linked daily view for food, workouts, steps, water, and blood sugar awareness.</div>", unsafe_allow_html=True)
+    prof = data["profile"]
     c1, c2, c3, c4 = st.columns(4)
-    cw = current_weight(data)
-    target = data["profile"]["calorie_target_training"] if data["settings"].get("training_day") else data["profile"]["calorie_target_rest"]
-    tn = total_nutrition(data, today)
-    c1.metric("Current weight", f"{cw:.1f} lb", f"BMI {bmi(cw)}")
-    c2.metric("Calories", f"{tn['calories']:.0f}", f"target {target}")
-    c3.metric("Protein", f"{tn['protein']:.0f}g", f"target {data['profile']['protein_target']}g")
-    c4.metric("Steps", f"{day.get('steps',0):,.0f}")
-    training = st.toggle("Training day mode", value=bool(data["settings"].get("training_day", True)), help="Changes calorie/carb guidance across the app.")
-    if training != data["settings"].get("training_day"):
-        data["settings"]["training_day"] = training; autosave(); st.rerun()
-    st.info("Training day: slightly higher smart carbs around workouts. Rest day: prioritize protein, vegetables, fibre, and lower-GI carbs.")
-    st.subheader("Todayâs Meals")
+    c1.metric("Current weight", f"{prof['current_weight']} lb")
+    c2.metric("Goal", f"Under {prof['goal_weight'] + 1:.0f} lb")
+    c3.metric("BMI", bmi(prof["current_weight"], prof["height_in"]))
+    c4.metric("Protein target", f"{prof['protein_target']} g")
+    training = st.toggle("Training day today", value=prof.get("training_day", True))
+    if training != prof.get("training_day"):
+        prof["training_day"] = training
+        save_data()
+    cal_target = prof["calorie_training"] if training else prof["calorie_rest"]
+    carb_target = prof["carb_training"] if training else prof["carb_rest"]
+    st.info(f"Today target: {cal_target} calories, {prof['protein_target']}g protein, about {carb_target}g carbs. Training/rest toggle changes these targets across the app.")
+    ds = today_str()
+    totals = meal_totals_for_date(ds)
     cols = st.columns(4)
-    for i, mt in enumerate(MEAL_TYPES):
-        meal = get_planned_meal(data, today, mt)
-        with cols[i]:
-            st.markdown(f"**{mt}**")
-            st.write(meal or "No planned meal yet")
-            for f in manual_foods_for(data, today, mt):
-                st.caption(f"+ {f['name']} ({f.get('calories',0)} cal)")
+    cols[0].metric("Calories logged", int(totals["cal"]), f"target {cal_target}")
+    cols[1].metric("Protein", f"{int(totals['protein'])} g", f"target {prof['protein_target']}g")
+    cols[2].metric("Carbs", f"{int(totals['carbs'])} g", f"target {carb_target}g")
+    cols[3].metric("Fibre", f"{int(totals['fibre'])} g")
+    st.divider()
     st.subheader("Quick daily log")
-    with st.form("home_daily_log"):
-        col1, col2, col3, col4 = st.columns(4)
-        weight = col1.number_input("Weight today (lb)", min_value=0.0, value=float(day.get("weight") or 0), step=0.1)
-        water = col2.number_input("Water cups", min_value=0, value=int(day.get("water", 0)), step=1)
-        steps = col3.number_input("Steps", min_value=0, value=int(day.get("steps", 0)), step=500)
-        notes = col4.text_input("Note", value=day.get("notes", ""))
+    dl = data["daily_logs"].setdefault(ds, {"water_l": 0.0, "steps": 0, "notes": ""})
+    with st.form("daily_log_form"):
+        water = st.number_input("Water today (L)", min_value=0.0, step=0.25, value=float(dl.get("water_l", 0.0)))
+        steps = st.number_input("Steps today", min_value=0, step=500, value=int(dl.get("steps", 0)))
+        notes = st.text_area("Notes", value=dl.get("notes", ""))
         if st.form_submit_button("Save daily log"):
-            day.update({"weight": weight if weight > 0 else None, "water": water, "steps": steps, "notes": notes})
-            autosave(); st.success("Saved.")
+            dl["water_l"] = water
+            dl["steps"] = steps
+            dl["notes"] = notes
+            save_data()
+            st.success("Daily log saved.")
 
 elif page == "Meals":
-    page_header("Meal Dashboard", "Todayâs planned meals come from Weekly Plan. Manual food entries save by date and meal type.")
-    selected_date = st.date_input("Food date", value=date.today()).isoformat()
-    tn = total_nutrition(data, selected_date)
-    st.metric("Total food calories", f"{tn['calories']:.0f}", f"Protein {tn['protein']:.0f}g Â· Carbs {tn['carbs']:.0f}g Â· Fibre {tn['fiber']:.0f}g")
+    st.markdown("<div class='gf-title'>Meal Dashboard</div>", unsafe_allow_html=True)
+    selected_date = st.date_input("Select date", value=date.today())
+    ds = selected_date.isoformat()
+    day = day_name_from_date(ds)
+    st.caption(f"Showing planned and manual foods for {day}, {ds}")
+    totals = meal_totals_for_date(ds)
+    st.success(f"Calories {int(totals['cal'])} | Protein {int(totals['protein'])}g | Carbs {int(totals['carbs'])}g | Fibre {int(totals['fibre'])}g")
     st.subheader("Planned + manual foods by meal")
+    plan = data["weekly_plan"].get(day, {})
     for mt in MEAL_TYPES:
         st.markdown(f"### {mt}")
-        meal = get_planned_meal(data, selected_date, mt)
-        if meal:
-            info = MEALS[meal]
-            st.markdown(f"**Planned:** {meal} â {info['cal']} cal, {info['protein']}g protein, GI: {info['gi']}")
-            st.caption(info["timing"])
+        meal_name = plan.get(mt, "")
+        if meal_name and meal_name in MEALS:
+            m = MEALS[meal_name]
+            card(f"<b>{meal_name}</b><br>{m['cal']} cal | {m['protein']}g protein | {m['carbs']}g carbs | GI: {m['gi']}<br><span class='small'>{m['when']}</span>")
         else:
             st.caption("No planned meal for this slot yet.")
-        mf = manual_foods_for(data, selected_date, mt)
-        for idx, f in enumerate(mf):
-            st.write(f"â¢ {f['name']} â {f.get('calories',0)} cal, {f.get('protein',0)}g protein")
+        manual = [x for x in data["manual_foods"] if x.get("date") == ds and x.get("meal_type") == mt]
+        for i, item in enumerate(manual):
+            st.write(f"- {item['name']}: {item.get('cal',0)} cal, {item.get('protein',0)}g protein, {item.get('carbs',0)}g carbs")
+    st.divider()
     st.subheader("Add manual food")
-    with st.form("manual_food"):
-        col1, col2 = st.columns(2)
-        name = col1.text_input("Food name")
-        meal_type = col2.selectbox("Meal type", MEAL_TYPES)
-        c1, c2, c3, c4 = st.columns(4)
-        calories = c1.number_input("Calories", 0, 3000, 0)
-        protein = c2.number_input("Protein (g)", 0.0, 250.0, 0.0)
-        carbs = c3.number_input("Carbs (g)", 0.0, 300.0, 0.0)
-        fiber = c4.number_input("Fibre (g)", 0.0, 100.0, 0.0)
-        add_groc = st.checkbox("Also add to grocery list")
-        grocery_item = st.text_input("Grocery item name (optional)", placeholder="e.g., cereal, Greek yogurt, eggs")
-        grocery_qty = st.number_input("Grocery quantity", 0.0, 1000.0, 1.0)
+    with st.form("manual_food_form", clear_on_submit=True):
+        c1, c2 = st.columns(2)
+        name = c1.text_input("Food name")
+        meal_type = c2.selectbox("Meal type", MEAL_TYPES)
+        c3, c4, c5, c6 = st.columns(4)
+        cal = c3.number_input("Calories", min_value=0, step=10)
+        protein = c4.number_input("Protein g", min_value=0.0, step=1.0)
+        carbs = c5.number_input("Carbs g", min_value=0.0, step=1.0)
+        fibre = c6.number_input("Fibre g", min_value=0.0, step=1.0)
+        add_grocery = st.checkbox("Also add this food/item to grocery list")
+        qty = st.number_input("Grocery quantity", min_value=0.0, step=1.0, value=1.0)
+        unit = st.text_input("Grocery unit", value="item")
         if st.form_submit_button("Save manual food"):
             if name.strip():
-                data["manual_foods"].append({"date": selected_date, "meal_type": meal_type, "name": name.strip(), "calories": calories, "protein": protein, "carbs": carbs, "fiber": fiber, "add_to_grocery": add_groc, "grocery_item": grocery_item.strip(), "grocery_qty": grocery_qty})
-                autosave(); st.success("Food saved and linked."); st.rerun()
+                data["manual_foods"].append({
+                    "date": ds, "meal_type": meal_type, "name": name.strip(),
+                    "cal": cal, "protein": protein, "carbs": carbs, "fibre": fibre,
+                    "created_at": datetime.now().isoformat()
+                })
+                if add_grocery:
+                    data["manual_grocery"].append({"name": name.strip(), "qty": qty, "unit": unit})
+                save_data()
+                st.success("Manual food saved and linked.")
             else:
-                st.error("Enter a food name.")
-    st.subheader("Recipe library")
-    meal_name = st.selectbox("Choose recipe", sorted(MEALS.keys()))
-    info = MEALS[meal_name]
-    servings = st.number_input("Meal prep servings", 1, 14, int(info["servings"]))
-    scale = servings / info["servings"]
-    st.markdown(f"**{meal_name}** Â· {info['gi']} GI Â· {info['cal']} cal/serving Â· {info['protein']}g protein/serving")
-    st.caption(info["timing"])
-    st.write("Ingredient quantities for the full prep:")
-    st.table(pd.DataFrame([{"Ingredient": k, "Amount": round(v * scale, 2)} for k, v in info["ingredients"].items()]))
-    st.write("Portion accuracy / dishing steps:")
-    for s in info["steps"]:
-        st.write(f"- {s}")
-    st.subheader("Fruit guide")
-    for group, items in FRUIT_GUIDE.items():
-        st.markdown(f"**{group}**")
-        for fruit, tip in items.items():
-            st.caption(f"{fruit}: {tip}")
+                st.warning("Enter a food name first.")
+    st.divider()
+    st.subheader("Meal database and recipe quantities")
+    filt = st.selectbox("Filter by meal type", ["All"] + MEAL_TYPES)
+    for meal_name, m in MEALS.items():
+        if filt != "All" and m["type"] != filt:
+            continue
+        with st.expander(meal_name):
+            st.write(f"{m['cal']} cal | {m['protein']}g protein | {m['carbs']}g carbs | {m['fibre']}g fibre | GI: {m['gi']}")
+            st.write(m["when"])
+            st.markdown("**Meal prep ingredients**")
+            for ing, q in m["ingredients"].items():
+                st.write(f"- {ing}: {q['qty']} {q['unit']} for {m['prep_servings']} serving(s)")
+            st.markdown("**Measuring and dishing steps**")
+            for s in m["steps"]:
+                st.write(f"- {s}")
 
 elif page == "Weekly Plan":
-    page_header("Weekly Meal Plan", "Select meals for each day. This automatically feeds Meals and Grocery.")
-    plan = data["weekly_plan"].setdefault(ws, {day: {mt: "" for mt in MEAL_TYPES} for day in DAYS})
-    with st.form("weekly_plan_form"):
-        for d in DAYS:
-            st.markdown(f"### {d}")
-            cols = st.columns(4)
-            for i, mt in enumerate(MEAL_TYPES):
-                opts = meal_options_for_type(mt)
-                current = plan.get(d, {}).get(mt, "")
-                idx = opts.index(current) if current in opts else 0
-                plan[d][mt] = cols[i].selectbox(mt, opts, index=idx, key=f"plan_{d}_{mt}")
-        if st.form_submit_button("Save weekly plan"):
-            data["weekly_plan"][ws] = plan; autosave(); st.success("Weekly plan saved. Meals and grocery will update.")
-    st.subheader("Weekly nutrition preview")
-    rows = []
-    for i, d in enumerate(DAYS):
-        ds = (datetime.strptime(ws, "%Y-%m-%d").date() + timedelta(days=i)).isoformat()
-        t = total_nutrition(data, ds)
-        rows.append({"Day": d, "Calories": t["calories"], "Protein": t["protein"], "Carbs": t["carbs"], "Fibre": t["fiber"]})
-    st.dataframe(pd.DataFrame(rows), use_container_width=True)
+    st.markdown("<div class='gf-title'>Weekly Meal Plan</div>", unsafe_allow_html=True)
+    st.caption("Selections here automatically populate the daily Meal Dashboard and the Grocery list.")
+    names_by_type = {mt: [""] + [n for n, m in MEALS.items() if m["type"] == mt] for mt in MEAL_TYPES}
+    for d in DAYS:
+        st.markdown(f"### {d}")
+        cols = st.columns(4)
+        for idx, mt in enumerate(MEAL_TYPES):
+            current = data["weekly_plan"].setdefault(d, {}).get(mt, "")
+            options = names_by_type[mt]
+            if current not in options:
+                current = ""
+            choice = cols[idx].selectbox(mt, options, index=options.index(current), key=f"wp_{d}_{mt}")
+            if choice != data["weekly_plan"][d].get(mt, ""):
+                data["weekly_plan"][d][mt] = choice
+                save_data()
+    st.success("Weekly plan autosaves. Grocery list updates from this plan.")
 
 elif page == "Grocery":
-    page_header("Grocery", "Smart list can come from weekly plan, manual foods, or selected groceries.")
-    auto = grocery_from_week(data, ws)
+    st.markdown("<div class='gf-title'>Smart Grocery</div>", unsafe_allow_html=True)
+    st.caption("This combines weekly plan ingredients, manual food items, and smart selectable groceries.")
     st.subheader("Auto-populated from weekly plan + manual foods")
-    if auto:
-        for item, qty in sorted(auto.items()):
-            key = f"grocery_{ws}_{item}"
-            checked = st.checkbox(f"{item}: {round(qty,2)}", value=data["grocery_checked"].get(key, False), key=key)
-            data["grocery_checked"][key] = checked
-        autosave()
+    totals = weekly_grocery_totals()
+    if not totals:
+        st.info("No grocery items yet. Add meals in Weekly Plan or manual foods in Meals.")
+    for (name, unit), qty in sorted(totals.items()):
+        key = f"grocery_auto_{name}_{unit}"
+        checked = data["grocery_checked"].get(key, False)
+        new = st.checkbox(f"{name}: {round(qty, 1)} {unit}", value=checked, key=key)
+        if new != checked:
+            data["grocery_checked"][key] = new
+            save_data()
+    st.divider()
+    st.subheader("Smart grocery options")
+    st.caption("Select items you want available; these can guide meals and recipes.")
+    for cat, items in SMART_GROCERY.items():
+        with st.expander(cat):
+            for item in items:
+                key = f"smart_{cat}_{item}"
+                current = data["grocery_checked"].get(key, False)
+                new = st.checkbox(item, value=current, key=key)
+                if new != current:
+                    data["grocery_checked"][key] = new
+                    if new:
+                        data["manual_grocery"].append({"name": item, "qty": 1, "unit": "item"})
+                    save_data()
+    st.divider()
+    st.subheader("Meal ideas based on selected grocery")
+    selected_items = [k.split("_", 2)[-1] for k, v in data["grocery_checked"].items() if k.startswith("smart_") and v]
+    if not selected_items:
+        st.caption("Select grocery options to see matching meal ideas.")
     else:
-        st.caption("No grocery items yet. Add meals to Weekly Plan or manual foods.")
-    st.subheader("Smart grocery builder")
-    common = ["chicken breast", "salmon", "shrimp", "eggs", "Greek yogurt", "high-protein low-sugar cereal", "berries", "green apples", "kiwi", "konjac rice", "konjac noodles", "sweet potato", "broccoli", "spinach", "lettuce", "avocado", "tuna", "cottage cheese", "chia seeds", "peanut butter"]
-    selected = st.multiselect("Select groceries you have/want", common)
-    suggestions = grocery_suggested_meals(selected)
-    if suggestions:
-        st.write("Meals that match your grocery selection:")
-        for m in suggestions:
-            st.write(f"- {m}")
-    with st.form("custom_grocery"):
-        item = st.text_input("Add custom grocery item")
-        if st.form_submit_button("Add item") and item.strip():
-            data["custom_grocery"].append(item.strip()); autosave(); st.rerun()
+        for meal_name, m in MEALS.items():
+            match = [ing for ing in m["ingredients"] if any(sel.lower() in ing.lower() or ing.lower() in sel.lower() for sel in selected_items)]
+            if match:
+                st.write(f"- {meal_name} matches: {', '.join(match)}")
 
 elif page == "Workouts":
-    page_header("Workout Dashboard", "Weekly plan shows remaining days first; completed/past days move lower. Sets save individually.")
+    st.markdown("<div class='gf-title'>Workout Dashboard</div>", unsafe_allow_html=True)
+    st.caption("Remaining days are shown first. Past/completed days move lower. Set-by-set progress saves.")
+    week_start = get_week_start()
     today_idx = date.today().weekday()
-    ordered_days = DAYS[today_idx:] + DAYS[:today_idx]
-    logs = data["workout_logs"].setdefault(ws, {})
+    week_key = week_start.isoformat()
+    logs = data["workout_logs"].setdefault(week_key, {})
+    st.write(f"Workout week starting {week_key}")
     def render_day(d, previous=False):
-        workout = WORKOUT_PLAN[d]
-        logs.setdefault(d, {})
-        with st.expander(("Previous / completed: " if previous else "") + f"{d} â {workout['focus']}", expanded=not previous):
-            for ex_name, sets, reps, weight, url in workout["exercises"]:
-                st.markdown(f"**{ex_name}**  [video/form]({url})")
-                exlog = logs[d].setdefault(ex_name, {"sets": [], "rating": 0, "notes": ""})
-                while len(exlog["sets"]) < sets:
-                    exlog["sets"].append({"done": False, "reps": reps, "weight": weight})
-                for si in range(sets):
-                    s = exlog["sets"][si]
-                    c1, c2, c3 = st.columns([1, 1, 1])
-                    s["done"] = c1.checkbox(f"Set {si+1}", value=bool(s.get("done", False)), key=f"{ws}_{d}_{ex_name}_{si}_done")
-                    s["reps"] = c2.number_input("Reps", 0, 100, int(s.get("reps", reps)), key=f"{ws}_{d}_{ex_name}_{si}_reps")
-                    s["weight"] = c3.number_input("Weight", 0.0, 1000.0, float(s.get("weight", weight)), step=2.5, key=f"{ws}_{d}_{ex_name}_{si}_wt")
-                exlog["rating"] = st.slider(f"Difficulty rating for {ex_name}", 0, 10, int(exlog.get("rating", 0)), key=f"{ws}_{d}_{ex_name}_rating")
-            logs[d]["day_notes"] = st.text_input(f"{d} notes", value=logs[d].get("day_notes", ""), key=f"{ws}_{d}_notes")
-            if st.button(f"Save {d} workout", key=f"save_{d}"):
-                autosave(); st.success(f"{d} workout saved.")
-    st.subheader("Remaining / current week")
-    for d in ordered_days:
-        idx = DAYS.index(d)
-        previous = idx < today_idx
-        if not previous:
+        wk = WORKOUT_WEEK[d]
+        day_log = logs.setdefault(d, {"completed": False, "rating": 0, "notes": "", "sets": {}})
+        st.markdown(f"### {d}: {wk['title']}")
+        st.caption(wk["focus"])
+        for ex_name, sets, reps, weight, link in wk["exercises"]:
+            with st.expander(ex_name, expanded=not previous):
+                st.link_button("Form video/search", link)
+                day_log["sets"].setdefault(ex_name, [])
+                while len(day_log["sets"][ex_name]) < sets:
+                    day_log["sets"][ex_name].append({"done": False, "weight": weight, "reps": reps})
+                for sidx in range(sets):
+                    row = day_log["sets"][ex_name][sidx]
+                    c1, c2, c3, c4 = st.columns([1,2,2,2])
+                    done = c1.checkbox(f"Set {sidx+1}", value=bool(row.get("done", False)), key=f"{week_key}_{d}_{ex_name}_{sidx}_done")
+                    wt = c2.number_input("Weight", min_value=0.0, step=2.5, value=float(row.get("weight", weight)), key=f"{week_key}_{d}_{ex_name}_{sidx}_wt")
+                    rp = c3.number_input("Reps/min", min_value=0, step=1, value=int(row.get("reps", reps)), key=f"{week_key}_{d}_{ex_name}_{sidx}_rp")
+                    c4.write("Saved")
+                    if done != row.get("done") or wt != row.get("weight") or rp != row.get("reps"):
+                        row["done"] = done
+                        row["weight"] = wt
+                        row["reps"] = rp
+                        save_data()
+        rating = st.slider(f"{d} workout rating", 0, 10, int(day_log.get("rating", 0)), key=f"rating_{week_key}_{d}")
+        notes = st.text_area(f"{d} notes", value=day_log.get("notes",""), key=f"notes_{week_key}_{d}")
+        complete = st.checkbox(f"Mark {d} complete", value=bool(day_log.get("completed", False)), key=f"complete_{week_key}_{d}")
+        if rating != day_log.get("rating") or notes != day_log.get("notes") or complete != day_log.get("completed"):
+            day_log["rating"] = rating
+            day_log["notes"] = notes
+            day_log["completed"] = complete
+            save_data()
+    st.subheader("Remaining this week")
+    for i, d in enumerate(DAYS):
+        if i >= today_idx and not logs.get(d, {}).get("completed", False):
             render_day(d, previous=False)
-    st.subheader("Previous / completed earlier this week")
-    for d in ordered_days:
-        idx = DAYS.index(d)
-        if idx < today_idx:
+    st.divider()
+    st.subheader("Previous or completed")
+    for i, d in enumerate(DAYS):
+        if i < today_idx or logs.get(d, {}).get("completed", False):
             render_day(d, previous=True)
-    autosave()
 
 elif page == "Progress":
-    page_header("Progress", "Charts read from saved daily logs and food/workout history.")
-    day = ensure_day(data, today_str())
-    with st.form("progress_form"):
-        col1, col2 = st.columns(2)
-        weight = col1.number_input("Save weight/progress", min_value=0.0, value=float(day.get("weight") or current_weight(data)), step=0.1)
-        steps = col2.number_input("Save steps", min_value=0, value=int(day.get("steps", 0)), step=500)
+    st.markdown("<div class='gf-title'>Progress</div>", unsafe_allow_html=True)
+    prof = data["profile"]
+    st.subheader("BMI and weight")
+    with st.form("weight_form"):
+        wt = st.number_input("Current weight lb", min_value=50.0, max_value=500.0, value=float(prof["current_weight"]), step=0.5)
         if st.form_submit_button("Save weight/progress"):
-            day["weight"] = weight; day["steps"] = steps; autosave(); st.success("Saved.")
-    cw = current_weight(data)
-    st.metric("BMI", bmi(cw), "based on 5'9\" and latest saved weight")
-    rows = []
-    for ds, vals in sorted(data["daily"].items()):
-        t = total_nutrition(data, ds)
-        rows.append({"date": ds, "weight": vals.get("weight"), "steps": vals.get("steps", 0), "water": vals.get("water", 0), "calories": t["calories"], "protein": t["protein"], "bmi": bmi(vals.get("weight")) if vals.get("weight") else None})
-    df = pd.DataFrame(rows)
-    if not df.empty:
+            prof["current_weight"] = wt
+            data["weight_logs"].append({"date": today_str(), "weight": wt, "bmi": bmi(wt, prof["height_in"])})
+            save_data()
+            st.success("Weight saved.")
+    current_bmi = bmi(prof["current_weight"], prof["height_in"])
+    c1, c2, c3 = st.columns(3)
+    c1.metric("BMI", current_bmi)
+    c2.metric("BMI category", bmi_label(current_bmi))
+    c3.metric("To under 200", f"{max(0, prof['current_weight'] - prof['goal_weight']):.1f} lb")
+    rows = data["weight_logs"]
+    if rows:
+        df = safe_df(rows)
         df["date"] = pd.to_datetime(df["date"])
-        st.subheader("Weight trend")
-        st.line_chart(df.dropna(subset=["weight"]).set_index("date")[["weight"]])
-        st.subheader("Nutrition trend")
-        st.line_chart(df.set_index("date")[["calories", "protein"]])
-        st.subheader("Steps/water trend")
-        st.line_chart(df.set_index("date")[["steps", "water"]])
-        st.dataframe(df, use_container_width=True)
+        st.line_chart(df.set_index("date")[["weight", "bmi"]])
     else:
-        st.caption("No progress data yet.")
+        st.info("No weight history yet.")
+    st.subheader("Food and habit trends")
+    day_rows = []
+    for ds, dl in data["daily_logs"].items():
+        totals = meal_totals_for_date(ds)
+        day_rows.append({"date": ds, "calories": totals["cal"], "protein": totals["protein"], "carbs": totals["carbs"], "water_l": dl.get("water_l", 0), "steps": dl.get("steps", 0)})
+    if day_rows:
+        df = safe_df(day_rows)
+        df["date"] = pd.to_datetime(df["date"])
+        st.line_chart(df.set_index("date")[["calories", "protein", "carbs", "water_l", "steps"]])
+    else:
+        st.info("No daily trend data yet.")
 
 elif page == "Blood Sugar":
-    page_header("Blood Sugar Awareness", "Symptom tracking and supportive tips. Not a diagnosis tool.")
-    selected_date = st.date_input("Symptom date", value=date.today()).isoformat()
-    chosen = st.multiselect("Symptoms I felt", list(SYMPTOMS.keys()))
-    note = st.text_area("Context note", placeholder="What did you eat, workout, water, stress, sleep?")
-    if st.button("Save symptom log"):
-        if chosen:
-            data["symptom_logs"].append({"date": selected_date, "symptoms": chosen, "note": note, "timestamp": datetime.now().isoformat()})
-            autosave(); st.success("Symptoms saved.")
-        else:
-            st.warning("Select at least one symptom.")
-    if chosen:
+    st.markdown("<div class='gf-title'>Blood Sugar Awareness</div>", unsafe_allow_html=True)
+    st.warning("This is an awareness tool, not a diagnosis or emergency tool. Use targets from your clinician.")
+    with st.form("symptoms_form"):
+        ds = st.date_input("Date", value=date.today()).isoformat()
+        selected = st.multiselect("Select symptoms felt", list(SYMPTOMS.keys()))
+        notes = st.text_area("Notes/context")
+        if st.form_submit_button("Save symptom log"):
+            data["symptom_logs"].append({"date": ds, "symptoms": selected, "notes": notes, "created_at": datetime.now().isoformat()})
+            save_data()
+            st.success("Symptoms saved.")
+    if selected:
         st.subheader("Tips based on selected symptoms")
-        for s in chosen:
-            st.write(f"**{s}:** {SYMPTOMS[s]}")
-    st.subheader("History")
+        for s in selected:
+            st.write(f"- {s}: {SYMPTOMS[s]}")
+    st.subheader("Symptom history")
     if data["symptom_logs"]:
-        st.dataframe(pd.DataFrame(data["symptom_logs"]), use_container_width=True)
+        st.dataframe(safe_df(data["symptom_logs"]), use_container_width=True)
     else:
         st.caption("No symptom logs yet.")
 
 elif page == "Settings / Backup":
-    page_header("Settings / Backup", "Save profile settings and export/import your app data.")
+    st.markdown("<div class='gf-title'>Settings / Backup</div>", unsafe_allow_html=True)
     prof = data["profile"]
-    with st.form("settings_form"):
-        prof["protein_target"] = st.number_input("Daily protein target (g)", 80, 220, int(prof.get("protein_target", PROTEIN_TARGET)))
-        prof["calorie_target_rest"] = st.number_input("Rest-day calorie target", 1200, 2600, int(prof.get("calorie_target_rest", 1650)))
-        prof["calorie_target_training"] = st.number_input("Training-day calorie target", 1200, 3000, int(prof.get("calorie_target_training", 1850)))
-        prof["goal_weight"] = st.number_input("Goal weight", 100.0, 300.0, float(prof.get("goal_weight", GOAL_WEIGHT)))
+    with st.form("profile_form"):
+        c1, c2, c3 = st.columns(3)
+        height = c1.number_input("Height inches", min_value=48, max_value=84, value=int(prof["height_in"]))
+        start = c2.number_input("Start weight", min_value=50.0, max_value=500.0, value=float(prof["start_weight"]))
+        current = c3.number_input("Current weight", min_value=50.0, max_value=500.0, value=float(prof["current_weight"]))
+        c4, c5, c6 = st.columns(3)
+        protein = c4.number_input("Protein target g", min_value=40, max_value=250, value=int(prof["protein_target"]))
+        cal_train = c5.number_input("Training day calories", min_value=1000, max_value=3500, value=int(prof["calorie_training"]))
+        cal_rest = c6.number_input("Rest day calories", min_value=1000, max_value=3500, value=int(prof["calorie_rest"]))
+        c7, c8 = st.columns(2)
+        carb_train = c7.number_input("Training day carbs g", min_value=40, max_value=300, value=int(prof["carb_training"]))
+        carb_rest = c8.number_input("Rest day carbs g", min_value=40, max_value=300, value=int(prof["carb_rest"]))
         if st.form_submit_button("Save settings"):
-            data["profile"] = prof; autosave(); st.success("Settings saved.")
+            prof.update({"height_in": height, "start_weight": start, "current_weight": current, "protein_target": protein, "calorie_training": cal_train, "calorie_rest": cal_rest, "carb_training": carb_train, "carb_rest": carb_rest})
+            save_data()
+            st.success("Settings saved.")
+    st.subheader("Backup")
     st.download_button("Download backup JSON", data=json.dumps(data, indent=2), file_name="glowfit_backup.json", mime="application/json")
-    uploaded = st.file_uploader("Restore backup JSON", type="json")
-    if uploaded and st.button("Restore backup"):
-        st.session_state.data = merge_defaults(default_data(), json.loads(uploaded.read().decode("utf-8")))
-        autosave(); st.success("Backup restored."); st.rerun()
-    if st.button("Force save now"):
-        autosave(); st.success("Saved.")
+    up = st.file_uploader("Restore backup JSON", type=["json"])
+    if up is not None:
+        try:
+            restored = json.load(up)
+            st.session_state.data = restored
+            save_data()
+            st.success("Backup restored. Refresh if needed.")
+        except Exception as e:
+            st.error(f"Could not restore backup: {e}")
+    if st.button("Reset all data"):
+        st.session_state.data = default_data()
+        save_data()
+        st.warning("All app data reset.")
